@@ -26,8 +26,10 @@ def build_shelf():
             sourceType="python",
             image=icon_path,
             command=(
-                "from MV_Renamer.launch_renamer import launch_renamer\n"
-                "launch_renamer()"
+                "import importlib\n"
+                "import MV_Renamer.renamerUI as renamerUI\n"
+                "importlib.reload(renamerUI)\n"
+                "renamerUI.showUI()"
             )
         )
         print("[MV_Tools] Shelf built successfully.")

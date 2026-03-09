@@ -102,6 +102,7 @@ class RenamerUI(QtWidgets.QDialog):
             data_to_display = self.renamer_tool.exclude_objects_with_correct_prefixes()
 
         self.current_data = data_to_display
+        self.row_checkboxes = []  # Store direct checkbox references
 
         ### CLEAR TABLE CONTENT
         self.table.setRowCount(0)
@@ -129,8 +130,10 @@ class RenamerUI(QtWidgets.QDialog):
                 checkbox_widget.setLayout(checkbox_layout)
 
                 self.table.setCellWidget(row_index, 0, checkbox_widget)
+                self.row_checkboxes.append(checkbox)  # Store direct reference
             else:
                 self.table.setCellWidget(row_index, 0, None)
+                self.row_checkboxes.append(None)
 
             ### CREATE TABLE ITEMS
             name_item = QtWidgets.QTableWidgetItem(obj["Name"])
@@ -167,22 +170,16 @@ class RenamerUI(QtWidgets.QDialog):
         """
         selected_objects_to_rename = []
 
-        ### LOOP THROUGH TABLE ROWS TO CHECK CHECKBOX STATES
-        for row in range(self.table.rowCount()):
-            widget = self.table.cellWidget(row, 0)
+        for row, checkbox in enumerate(self.row_checkboxes):
+            if checkbox and checkbox.isChecked():
+                obj_name = self.table.item(row, 1).text()
+                obj_type = self.table.item(row, 2).text()
 
-            if widget:
-                checkbox = widget.findChild(QtWidgets.QCheckBox)
-
-                if checkbox and checkbox.isChecked():
-                    obj_name = self.table.item(row, 1).text()
-                    obj_type = self.table.item(row, 2).text()
-
-                    ### MATCH WITH OPERABLE OBJECTS LIST
-                    for obj in renamer.configure_operable_object_dictionary()["objects"]:
-                        if obj["Name"] == obj_name and obj["DetectedType"] == obj_type:
-                            selected_objects_to_rename.append(obj)
-                            break
+                ### MATCH WITH OPERABLE OBJECTS LIST
+                for obj in renamer.configure_operable_object_dictionary()["objects"]:
+                    if obj["Name"] == obj_name and obj["DetectedType"] == obj_type:
+                        selected_objects_to_rename.append(obj)
+                        break
 
         return selected_objects_to_rename
 
@@ -208,21 +205,23 @@ class RenamerUI(QtWidgets.QDialog):
         """
         is_checked = self.selectAllCheckbox.isChecked()
 
-        for row in range(self.table.rowCount()):
-            widget = self.table.cellWidget(row, 0)
-
-            if widget:
-                checkbox = widget.findChild(QtWidgets.QCheckBox)
-
-                if checkbox:
-                    checkbox.setChecked(is_checked)
+        for checkbox in self.row_checkboxes:
+            if checkbox:
+                checkbox.setChecked(is_checked)
 
 
 def showUI():
     """
     Launches the Renamer UI as a modal dialog.
     Prevents interaction with the Maya UI while open.
+    Warns the user if nothing is selected.
     """
+    try:
+        maya_utilities.get_user_object_selection()
+    except RuntimeError as e:
+        cmds.warning(str(e))
+        return
+
     ui = RenamerUI()
     ui.exec()
 
