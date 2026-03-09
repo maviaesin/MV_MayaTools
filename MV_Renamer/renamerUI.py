@@ -1,6 +1,6 @@
 from maya import cmds
-from utilityScriptsLibrary.Qt import QtWidgets, QtCore, QtGui
-from utilityScriptsLibrary import maya_utilities, object_utilities, constants_library
+from MV_UtilityScripts.Qt import QtWidgets, QtCore, QtGui
+from MV_UtilityScripts import maya_utilities, object_utilities, constants_library
 from importlib import reload
 from . import renamer
 

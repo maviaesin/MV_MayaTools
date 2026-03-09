@@ -1,7 +1,7 @@
 import maya.cmds as cmds
-from utilityScriptsLibrary.constants_library import PREFIXES
-from utilityScriptsLibrary.object_utilities import ObjectUtilities
-import utilityScriptsLibrary.maya_utilities as uti
+from MV_UtilityScripts.constants_library import PREFIXES
+from MV_UtilityScripts.object_utilities import ObjectUtilities
+import MV_UtilityScripts.maya_utilities as uti
 
 
 

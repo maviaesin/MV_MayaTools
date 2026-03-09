@@ -1,5 +1,5 @@
 import maya.cmds as cmds
-from utilityScriptsLibrary import maya_utilities as uti
+from MV_UtilityScripts import maya_utilities as uti
 
 
 class ObjectUtilities:
