@@ -1,5 +1,5 @@
 import maya.cmds as cmds
-from MV_UtilityScripts.constants_library import PREFIXES
+from MV_UtilityScripts.constants_library import PREFIXES, SUFFIXES
 from MV_UtilityScripts.object_utilities import ObjectUtilities
 import MV_UtilityScripts.maya_utilities as uti
 
@@ -88,3 +88,45 @@ def rename_objects(obj_list):
         ### RENAME OBJECT IN MAYA
         transform_node = obj_path.split('|')[-1]
         cmds.rename(transform_node, new_name, ignoreShape=True)
+
+
+### SUFFIX OPERATIONS
+
+def add_suffix(suffix):
+    """
+    Appends the given suffix to all selected transform nodes.
+    Skips objects that already have the suffix.
+
+    :param suffix: Suffix string to append (e.g. "_low", "_high")
+    """
+    selected = uti.get_user_object_selection()
+
+    for obj in selected:
+        if cmds.nodeType(obj) != "transform":
+            continue
+
+        name = obj.split("|")[-1]
+
+        if not name.endswith(suffix):
+            cmds.rename(obj, f"{name}{suffix}", ignoreShape=True)
+
+
+def remove_suffix(known_suffixes):
+    """
+    Removes a known suffix from all selected transform nodes.
+    Only strips the first matching suffix found.
+
+    :param known_suffixes: List of suffix strings to check against (e.g. ["_low", "_high"])
+    """
+    selected = uti.get_user_object_selection()
+
+    for obj in selected:
+        if cmds.nodeType(obj) != "transform":
+            continue
+
+        name = obj.split("|")[-1]
+
+        for suffix in known_suffixes:
+            if name.endswith(suffix):
+                cmds.rename(obj, name[:-len(suffix)], ignoreShape=True)
+                break

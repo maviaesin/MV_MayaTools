@@ -1,6 +1,7 @@
 from maya import cmds
 from MV_UtilityScripts.Qt import QtWidgets, QtCore, QtGui
 from MV_UtilityScripts import maya_utilities, object_utilities, constants_library
+from MV_UtilityScripts.constants_library import SUFFIXES
 from importlib import reload
 from . import renamer
 from .renamer import rename_objects
@@ -28,36 +29,50 @@ class RenamerUI(QtWidgets.QDialog):
     def buildUI(self):
         """Builds the UI layout and initializes UI components."""
 
-        ### CREATE MAIN LAYOUT
+        ### CREATE MAIN LAYOUT WITH TAB WIDGET
+        main_layout = QtWidgets.QVBoxLayout()
+
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.addTab(self._build_prefix_tab(), "Prefix")
+        self.tabs.addTab(self._build_suffix_tab(), "Suffix")
+
+        main_layout.addWidget(self.tabs)
+        self.setLayout(main_layout)
+
+    # ─────────────────────────────────────────
+    # PREFIX TAB
+    # ─────────────────────────────────────────
+
+    def _build_prefix_tab(self):
+        """Builds and returns the Prefix tab widget."""
+
+        tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout()
 
-        ### CREATE CHECKBOXES FOR DISPLAY OPTIONS
+        ### CHECKBOXES ROW
         checkbox_layout = QtWidgets.QHBoxLayout()
 
-        # Checkbox to show/hide objects with correct prefixes
         self.showCorrectPrefixesCheckbox = QtWidgets.QCheckBox("Show/Hide objects with correct prefixes")
         self.showCorrectPrefixesCheckbox.stateChanged.connect(self.refresh)
 
-        # Checkbox to select/deselect all items
         self.selectAllCheckbox = QtWidgets.QCheckBox("Select All")
         self.selectAllCheckbox.stateChanged.connect(self.toggle_all_checkboxes)
 
         checkbox_layout.addWidget(self.showCorrectPrefixesCheckbox)
         checkbox_layout.addWidget(self.selectAllCheckbox)
         checkbox_layout.addStretch()
-
         layout.addLayout(checkbox_layout)
 
-        ### ADD COLOR LEGEND
+        ### COLOR LEGEND
         self.legendLabel = QtWidgets.QLabel(
             '<span style="color: lightgray;">⬤ No Prefix</span> &nbsp; '
             '<span style="color: lightGreen;">⬤ Correct Prefix</span> &nbsp; '
-            '<span style="color: Red;">⬤ Incorrect Prefix</span>'
+            '<span style="color: lightRed;">⬤ Incorrect Prefix</span>'
         )
         self.legendLabel.setAlignment(QtCore.Qt.AlignLeft)
         layout.addWidget(self.legendLabel)
 
-        ### CREATE TABLE FOR DISPLAYING OBJECTS
+        ### TABLE
         self.table = QtWidgets.QTableWidget()
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["", "Name", "Detected Type", "Detected Prefix"])
@@ -70,7 +85,7 @@ class RenamerUI(QtWidgets.QDialog):
 
         layout.addWidget(self.table)
 
-        ### CREATE ACTION BUTTONS
+        ### ACTION BUTTONS
         button_layout = QtWidgets.QHBoxLayout()
 
         self.renameSelectedButton = QtWidgets.QPushButton("Rename Selected")
@@ -89,8 +104,71 @@ class RenamerUI(QtWidgets.QDialog):
 
         layout.addLayout(button_layout)
 
-        ### SET FINAL LAYOUT
-        self.setLayout(layout)
+        tab.setLayout(layout)
+        return tab
+
+    # ─────────────────────────────────────────
+    # SUFFIX TAB
+    # ─────────────────────────────────────────
+
+    def _build_suffix_tab(self):
+        """Builds and returns the Suffix tab widget."""
+
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout()
+        layout.setAlignment(QtCore.Qt.AlignTop)
+
+        ### PRESET SUFFIX BUTTONS
+        preset_layout = QtWidgets.QHBoxLayout()
+
+        self.lowButton = QtWidgets.QPushButton("_low")
+        self.lowButton.clicked.connect(lambda: self.handle_add_suffix(SUFFIXES["low"]))
+        preset_layout.addWidget(self.lowButton)
+
+        self.highButton = QtWidgets.QPushButton("_high")
+        self.highButton.clicked.connect(lambda: self.handle_add_suffix(SUFFIXES["high"]))
+        preset_layout.addWidget(self.highButton)
+
+        preset_layout.addStretch()
+        layout.addLayout(preset_layout)
+
+        ### CUSTOM SUFFIX ROW
+        custom_layout = QtWidgets.QHBoxLayout()
+
+        custom_label = QtWidgets.QLabel("Custom:")
+        self.customSuffixInput = QtWidgets.QLineEdit()
+        self.customSuffixInput.setPlaceholderText("e.g. _UVTransfer")
+
+        self.applyCustomButton = QtWidgets.QPushButton("Apply")
+        self.applyCustomButton.clicked.connect(self.handle_add_custom_suffix)
+
+        custom_layout.addWidget(custom_label)
+        custom_layout.addWidget(self.customSuffixInput)
+        custom_layout.addWidget(self.applyCustomButton)
+
+        layout.addLayout(custom_layout)
+
+        ### BOTTOM BUTTONS
+        bottom_layout = QtWidgets.QHBoxLayout()
+
+        self.removeSuffixButton = QtWidgets.QPushButton("Remove Suffix")
+        self.removeSuffixButton.clicked.connect(self.handle_remove_suffix)
+        bottom_layout.addWidget(self.removeSuffixButton)
+
+        bottom_layout.addStretch()
+
+        self.cancelSuffixButton = QtWidgets.QPushButton("Cancel")
+        self.cancelSuffixButton.clicked.connect(self.close)
+        bottom_layout.addWidget(self.cancelSuffixButton)
+
+        layout.addLayout(bottom_layout)
+
+        tab.setLayout(layout)
+        return tab
+
+    # ─────────────────────────────────────────
+    # PREFIX METHODS
+    # ─────────────────────────────────────────
 
     def refresh(self):
         """Refreshes the table data based on the current filter settings and resizes the window dynamically."""
@@ -102,7 +180,7 @@ class RenamerUI(QtWidgets.QDialog):
             data_to_display = self.renamer_tool.exclude_objects_with_correct_prefixes()
 
         self.current_data = data_to_display
-        self.row_checkboxes = []  # Store direct checkbox references
+        self.row_checkboxes = []
 
         ### CLEAR TABLE CONTENT
         self.table.setRowCount(0)
@@ -110,7 +188,7 @@ class RenamerUI(QtWidgets.QDialog):
         ### POPULATE TABLE WITH FILTERED OBJECTS
         for obj in data_to_display:
 
-            if not obj["DetectedPrefix"]:  # Skip objects without a detected prefix
+            if not obj["DetectedPrefix"]:
                 continue
 
             row_index = self.table.rowCount()
@@ -130,7 +208,7 @@ class RenamerUI(QtWidgets.QDialog):
                 checkbox_widget.setLayout(checkbox_layout)
 
                 self.table.setCellWidget(row_index, 0, checkbox_widget)
-                self.row_checkboxes.append(checkbox)  # Store direct reference
+                self.row_checkboxes.append(checkbox)
             else:
                 self.table.setCellWidget(row_index, 0, None)
                 self.row_checkboxes.append(None)
@@ -140,7 +218,7 @@ class RenamerUI(QtWidgets.QDialog):
             type_item = QtWidgets.QTableWidgetItem(obj["DetectedType"])
             prefix_item = QtWidgets.QTableWidgetItem(obj["DetectedPrefix"])
 
-            ### APPLY COLOR CODING BASED ON PREFIX STATUS
+            ### APPLY COLOR CODING
             if obj["PrefixStatus"] == "no_prefix":
                 color = QtGui.QColor("lightgrey")
             elif obj["PrefixStatus"] == "incorrect_prefix":
@@ -152,22 +230,17 @@ class RenamerUI(QtWidgets.QDialog):
             type_item.setForeground(color)
             prefix_item.setForeground(color)
 
-            ### ADD ITEMS TO TABLE
             self.table.setItem(row_index, 1, name_item)
             self.table.setItem(row_index, 2, type_item)
             self.table.setItem(row_index, 3, prefix_item)
 
-        ### ADJUST WINDOW SIZE DYNAMICALLY
+        ### ADJUST WINDOW HEIGHT DYNAMICALLY
         row_count = self.table.rowCount()
         new_height = 250 + (row_count * 20)
-        max_height = 800
-        self.resize(700, min(new_height, max_height))
+        self.resize(700, min(new_height, 800))
 
     def get_checked_objects(self):
-        """
-        Retrieves objects that have their checkboxes checked in the UI table.
-        Returns a list of selected objects for renaming.
-        """
+        """Returns a list of checked objects from the prefix table."""
         selected_objects_to_rename = []
 
         for row, checkbox in enumerate(self.row_checkboxes):
@@ -175,7 +248,6 @@ class RenamerUI(QtWidgets.QDialog):
                 obj_name = self.table.item(row, 1).text()
                 obj_type = self.table.item(row, 2).text()
 
-                ### MATCH WITH OPERABLE OBJECTS LIST
                 for obj in renamer.configure_operable_object_dictionary()["objects"]:
                     if obj["Name"] == obj_name and obj["DetectedType"] == obj_type:
                         selected_objects_to_rename.append(obj)
@@ -184,30 +256,59 @@ class RenamerUI(QtWidgets.QDialog):
         return selected_objects_to_rename
 
     def handle_rename_selected(self):
-        """Renames only the objects that have their checkboxes checked in the UI."""
-
+        """Renames only the checked objects in the prefix table."""
         selected_objects = self.get_checked_objects()
-
         if selected_objects:
             rename_objects(selected_objects)
-
         self.close()
 
     def handle_rename_all(self):
-        """Renames all objects that need renaming and closes the UI."""
-
+        """Renames all objects that need renaming."""
         rename_objects(renamer.exclude_objects_with_correct_prefixes())
         self.close()
 
     def toggle_all_checkboxes(self, state):
-        """
-        Toggles all checkboxes based on the state of the 'Select All' checkbox.
-        """
+        """Toggles all prefix table checkboxes via the Select All checkbox."""
         is_checked = self.selectAllCheckbox.isChecked()
-
         for checkbox in self.row_checkboxes:
             if checkbox:
                 checkbox.setChecked(is_checked)
+
+    # ─────────────────────────────────────────
+    # SUFFIX METHODS
+    # ─────────────────────────────────────────
+
+    def handle_add_suffix(self, suffix):
+        """Applies a preset suffix to the current Maya selection."""
+        renamer.add_suffix(suffix)
+        self.close()
+
+    def handle_add_custom_suffix(self):
+        """Applies the custom suffix input to the current Maya selection."""
+        suffix = self.customSuffixInput.text().strip()
+
+        if not suffix:
+            cmds.warning("Please enter a custom suffix.")
+            return
+
+        if not suffix.startswith("_"):
+            suffix = f"_{suffix}"
+
+        renamer.add_suffix(suffix)
+        self.close()
+
+    def handle_remove_suffix(self):
+        """Removes any known suffix (preset or custom) from the current Maya selection."""
+        custom = self.customSuffixInput.text().strip()
+        if custom and not custom.startswith("_"):
+            custom = f"_{custom}"
+
+        known = list(SUFFIXES.values())
+        if custom:
+            known.append(custom)
+
+        renamer.remove_suffix(known)
+        self.close()
 
 
 def showUI():

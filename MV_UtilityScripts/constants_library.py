@@ -21,3 +21,9 @@ PREFIXES = {
 ### COMMENTED-OUT PREFIXES (CAN BE RE-ENABLED IF NEEDED)
 # "joint": "J_",      # Joint / Bone
 # "transform": "GRP_" # Group (used for hierarchical organization)
+
+### SUFFIX MAPPING
+SUFFIXES = {
+    "low":  "_low",
+    "high": "_high",
+}
