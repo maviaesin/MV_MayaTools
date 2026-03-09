@@ -1,5 +1,5 @@
 from maya import cmds
-from PySide2 import QtWidgets, QtCore, QtGui
+from utilityScriptsLibrary.Qt import QtWidgets, QtCore, QtGui
 from utilityScriptsLibrary import maya_utilities, object_utilities, constants_library
 from importlib import reload
 from . import renamer
@@ -63,7 +63,7 @@ class RenamerUI(QtWidgets.QDialog):
         button_layout.addWidget(self.renameSelectedButton)
 
         self.renameAllButton = QtWidgets.QPushButton("Rename All")
-        self.renameAllButton.clicked.connect(self.rename_all)  # Functionality can be added later
+        self.renameAllButton.clicked.connect(self.rename_all)
         button_layout.addWidget(self.renameAllButton)
 
         # Spacer to push the Cancel button to the right
