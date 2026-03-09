@@ -3,146 +3,227 @@ from MV_UtilityScripts.Qt import QtWidgets, QtCore, QtGui
 from MV_UtilityScripts import maya_utilities, object_utilities, constants_library
 from importlib import reload
 from . import renamer
+from .renamer import rename_objects
 
 reload(renamer)
+
 
 class RenamerUI(QtWidgets.QDialog):
 
     def __init__(self):
+        """Initialize the Renamer UI window."""
         super().__init__(None)
 
-        ## Initialize window properties
+        ### SET WINDOW PROPERTIES
         self.setWindowTitle("Renamer")
         self.renamer_tool = renamer
-        self.resize(700, 350)
+        self.resize(700, 250)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+
+        ### BUILD UI & LOAD DATA
         self.buildUI()
         self.refresh()
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
 
     def buildUI(self):
-        print("Building UI")
+        """Builds the UI layout and initializes UI components."""
 
-        ## Create the **main vertical layout** to add everything inside
+        ### CREATE MAIN LAYOUT
         layout = QtWidgets.QVBoxLayout()
 
-        # Create the checkbox for showing objects with correct prefixes
-        self.showCorrectPrefixesCheckbox = QtWidgets.QCheckBox("Show/Hide objects with correct prefixes")
+        ### CREATE CHECKBOXES FOR DISPLAY OPTIONS
+        checkbox_layout = QtWidgets.QHBoxLayout()
 
-        # Connect the stateChanged signal to the refresh method so the table updates when toggled
+        # Checkbox to show/hide objects with correct prefixes
+        self.showCorrectPrefixesCheckbox = QtWidgets.QCheckBox("Show/Hide objects with correct prefixes")
         self.showCorrectPrefixesCheckbox.stateChanged.connect(self.refresh)
 
-        #  Create a horizontal layout for the checkbox, align it to the left
-        checkbox_layout = QtWidgets.QHBoxLayout()
-        checkbox_layout.addWidget(self.showCorrectPrefixesCheckbox)
-        checkbox_layout.addStretch()  # Pushes checkbox to the left but how??
+        # Checkbox to select/deselect all items
+        self.selectAllCheckbox = QtWidgets.QCheckBox("Select All")
+        self.selectAllCheckbox.stateChanged.connect(self.toggle_all_checkboxes)
 
-        # Add the checkbox layout to the main layout
+        checkbox_layout.addWidget(self.showCorrectPrefixesCheckbox)
+        checkbox_layout.addWidget(self.selectAllCheckbox)
+        checkbox_layout.addStretch()
+
         layout.addLayout(checkbox_layout)
 
-        # Create table
+        ### ADD COLOR LEGEND
+        self.legendLabel = QtWidgets.QLabel(
+            '<span style="color: lightgray;">⬤ No Prefix</span> &nbsp; '
+            '<span style="color: lightGreen;">⬤ Correct Prefix</span> &nbsp; '
+            '<span style="color: Red;">⬤ Incorrect Prefix</span>'
+        )
+        self.legendLabel.setAlignment(QtCore.Qt.AlignLeft)
+        layout.addWidget(self.legendLabel)
+
+        ### CREATE TABLE FOR DISPLAYING OBJECTS
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(4)  # 4 columns
+        self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["", "Name", "Detected Type", "Detected Prefix"])
 
-        # Narrow down the tickbox column by setting a fixed width
         self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Fixed)
-        self.table.setColumnWidth(0, 20)  # Adjust width as needed
+        self.table.setColumnWidth(0, 20)
 
-        # Enable resizing of columns
         for col in range(1, 4):
             self.table.horizontalHeader().setSectionResizeMode(col, QtWidgets.QHeaderView.Stretch)
 
-        # Add the table to the same main layout
         layout.addWidget(self.table)
 
-        # Create a horizontal layout for action buttons at the bottom
+        ### CREATE ACTION BUTTONS
         button_layout = QtWidgets.QHBoxLayout()
 
-        # Left-aligned buttons: Rename Selected and Rename All
         self.renameSelectedButton = QtWidgets.QPushButton("Rename Selected")
-        self.renameSelectedButton.clicked.connect(self.rename_selected)
+        self.renameSelectedButton.clicked.connect(self.handle_rename_selected)
         button_layout.addWidget(self.renameSelectedButton)
 
         self.renameAllButton = QtWidgets.QPushButton("Rename All")
-        self.renameAllButton.clicked.connect(self.rename_all)
+        self.renameAllButton.clicked.connect(self.handle_rename_all)
         button_layout.addWidget(self.renameAllButton)
 
-        # Spacer to push the Cancel button to the right
         button_layout.addStretch()
 
-        # Right-aligned Cancel button
         self.cancelButton = QtWidgets.QPushButton("Cancel")
         self.cancelButton.clicked.connect(self.close)
         button_layout.addWidget(self.cancelButton)
 
         layout.addLayout(button_layout)
 
-        # ✅ Set the final layout (this is crucial)
+        ### SET FINAL LAYOUT
         self.setLayout(layout)
 
     def refresh(self):
-        print("Refreshed to show/hide objects with correct prefixes.")
+        """Refreshes the table data based on the current filter settings and resizes the window dynamically."""
 
-        # Choose the data based on checkbox state:
-        # If checked, show all objects; if not, show only objects needing renaming.
+        ### SELECT DATASET BASED ON CHECKBOX STATE
         if self.showCorrectPrefixesCheckbox.isChecked():
-            data_to_display = self.renamer_tool.operable_objects["objects"]
+            data_to_display = self.renamer_tool.configure_operable_object_dictionary()["objects"]
         else:
-            data_to_display = self.renamer_tool.obj_to_operate
+            data_to_display = self.renamer_tool.exclude_objects_with_correct_prefixes()
 
-        # Store the current data for later use (e.g., in rename_selected)
         self.current_data = data_to_display
 
-        # Clear current table content
+        ### CLEAR TABLE CONTENT
         self.table.setRowCount(0)
 
-        # Loop through each object in the chosen data and insert it into the table
+        ### POPULATE TABLE WITH FILTERED OBJECTS
         for obj in data_to_display:
+
+            if not obj["DetectedPrefix"]:  # Skip objects without a detected prefix
+                continue
+
             row_index = self.table.rowCount()
             self.table.insertRow(row_index)
 
-            # Only add a tickbox if the object needs renaming
+            ### ADD CHECKBOX FOR SELECTABLE ITEMS
             if obj["PrefixStatus"] in ["no_prefix", "incorrect_prefix"]:
+                checkbox_widget = QtWidgets.QWidget()
+                checkbox_layout = QtWidgets.QHBoxLayout()
+
                 checkbox = QtWidgets.QCheckBox()
-                # Apply a style sheet to force a contrasting background
-                checkbox.setStyleSheet("QCheckBox { background-color: darkGray; }")
-                self.table.setCellWidget(row_index, 0, checkbox)
+                checkbox.setStyleSheet("QCheckBox { background-color: White; color: black }")
+
+                checkbox_layout.addWidget(checkbox)
+                checkbox_layout.setAlignment(QtCore.Qt.AlignCenter)
+                checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                checkbox_widget.setLayout(checkbox_layout)
+
+                self.table.setCellWidget(row_index, 0, checkbox_widget)
             else:
                 self.table.setCellWidget(row_index, 0, None)
 
-            # Create table items for each column (starting with column 1)
+            ### CREATE TABLE ITEMS
             name_item = QtWidgets.QTableWidgetItem(obj["Name"])
             type_item = QtWidgets.QTableWidgetItem(obj["DetectedType"])
             prefix_item = QtWidgets.QTableWidgetItem(obj["DetectedPrefix"])
 
-            # Optional: Color code rows based on prefix status
+            ### APPLY COLOR CODING BASED ON PREFIX STATUS
             if obj["PrefixStatus"] == "no_prefix":
-                color = QtGui.QColor("darkCyan")
+                color = QtGui.QColor("lightgrey")
             elif obj["PrefixStatus"] == "incorrect_prefix":
-                color = QtGui.QColor("darkRed")
-            else:  # For correct prefixes
-                color = QtGui.QColor("darkGreen")
+                color = QtGui.QColor("Red")
+            else:
+                color = QtGui.QColor("lightGreen")
 
-            # Apply the background color to each item
-            name_item.setBackground(color)
-            type_item.setBackground(color)
-            prefix_item.setBackground(color)
+            name_item.setForeground(color)
+            type_item.setForeground(color)
+            prefix_item.setForeground(color)
 
-            # Insert the items into the table.
-            # Note: Column 0 is left blank (could be used later for a selection checkbox)
+            ### ADD ITEMS TO TABLE
             self.table.setItem(row_index, 1, name_item)
             self.table.setItem(row_index, 2, type_item)
             self.table.setItem(row_index, 3, prefix_item)
 
-    def rename_selected(self):
-        pass
-    def rename_all(self):
-        pass
+        ### ADJUST WINDOW SIZE DYNAMICALLY
+        row_count = self.table.rowCount()
+        new_height = 250 + (row_count * 20)
+        max_height = 800
+        self.resize(700, min(new_height, max_height))
+
+    def get_checked_objects(self):
+        """
+        Retrieves objects that have their checkboxes checked in the UI table.
+        Returns a list of selected objects for renaming.
+        """
+        selected_objects_to_rename = []
+
+        ### LOOP THROUGH TABLE ROWS TO CHECK CHECKBOX STATES
+        for row in range(self.table.rowCount()):
+            widget = self.table.cellWidget(row, 0)
+
+            if widget:
+                checkbox = widget.findChild(QtWidgets.QCheckBox)
+
+                if checkbox and checkbox.isChecked():
+                    obj_name = self.table.item(row, 1).text()
+                    obj_type = self.table.item(row, 2).text()
+
+                    ### MATCH WITH OPERABLE OBJECTS LIST
+                    for obj in renamer.configure_operable_object_dictionary()["objects"]:
+                        if obj["Name"] == obj_name and obj["DetectedType"] == obj_type:
+                            selected_objects_to_rename.append(obj)
+                            break
+
+        return selected_objects_to_rename
+
+    def handle_rename_selected(self):
+        """Renames only the objects that have their checkboxes checked in the UI."""
+
+        selected_objects = self.get_checked_objects()
+
+        if selected_objects:
+            rename_objects(selected_objects)
+
+        self.close()
+
+    def handle_rename_all(self):
+        """Renames all objects that need renaming and closes the UI."""
+
+        rename_objects(renamer.exclude_objects_with_correct_prefixes())
+        self.close()
+
+    def toggle_all_checkboxes(self, state):
+        """
+        Toggles all checkboxes based on the state of the 'Select All' checkbox.
+        """
+        is_checked = self.selectAllCheckbox.isChecked()
+
+        for row in range(self.table.rowCount()):
+            widget = self.table.cellWidget(row, 0)
+
+            if widget:
+                checkbox = widget.findChild(QtWidgets.QCheckBox)
+
+                if checkbox:
+                    checkbox.setChecked(is_checked)
 
 
 def showUI():
+    """
+    Launches the Renamer UI as a modal dialog.
+    Prevents interaction with the Maya UI while open.
+    """
     ui = RenamerUI()
-    ui.exec() ## No interaction with Maya UI, to prevent selection changes.
+    ui.exec()
 
     return ui
-
-
