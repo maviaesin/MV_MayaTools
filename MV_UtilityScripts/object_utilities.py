@@ -78,10 +78,12 @@ class ObjectUtilities:
         """
         expected_prefix = self.detect_prefix(o_type, prefix_dict)
 
-        ### EXTRACT CURRENT PREFIX FROM NAME ###
+        ### CHECK IF NAME STARTS WITH ANY KNOWN PREFIX ###
         current_prefix = ""
-        if "_" in o_name:
-            current_prefix = o_name.split("_")[0] + "_"
+        for prefix in set(prefix_dict.values()):
+            if prefix and o_name.startswith(prefix):
+                current_prefix = prefix
+                break
 
         ### CHECK PREFIX CONDITIONS ###
         if not current_prefix:
