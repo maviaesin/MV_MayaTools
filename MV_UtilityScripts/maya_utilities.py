@@ -23,6 +23,52 @@ def get_user_object_selection(selection=False):
     return selected_object_list
 
 
+def get_materials_from_selection():
+    """
+    Grabs all materials assigned to the selected objects, skipping lambert1.
+    Goes through each shape node and traces it back to its material through the shading engine.
+
+    Returns three lists:
+        mat_rows: one (material, object) pair per unique material found
+        also_affected: other objects that share a material already in mat_rows
+        lambert1_objects: objects where the only assigned material is lambert1
+    """
+    shapes = cmds.ls(selection=True, dag=True, shapes=True, noIntermediate=True) or []
+
+    seen_mats = {}
+    also_affected = []
+    lambert1_objects = []
+
+    for shape in shapes:
+        transform = (cmds.listRelatives(shape, parent=True) or [shape])[0]
+        obj_name = transform.split("|")[-1]
+
+        shading_engines = cmds.listConnections(shape, type='shadingEngine') or []
+        non_default_mats = []
+
+        ### check each shading engine for a real material
+        for se in shading_engines:
+            mats = cmds.listConnections(se + '.surfaceShader') or []
+            for mat in mats:
+                if mat != 'lambert1':
+                    non_default_mats.append(mat)
+
+                    ### first time seeing this material, store it
+                    if mat not in seen_mats:
+                        seen_mats[mat] = obj_name
+
+                    ### same material on a different object, track it separately
+                    elif seen_mats[mat] != obj_name:
+                        also_affected.append((obj_name, mat))
+
+        ### if no real materials found, this object only has lambert1
+        if not non_default_mats:
+            lambert1_objects.append(obj_name)
+
+    mat_rows = [(mat, obj) for mat, obj in seen_mats.items()]
+    return mat_rows, also_affected, lambert1_objects
+
+
 def check_object_is_mesh(obj) -> bool:
     """
     Checks if the given object is a mesh.

@@ -1,3 +1,4 @@
+import re
 import maya.cmds as cmds
 from MV_UtilityScripts.constants_library import PREFIXES, SUFFIXES
 from MV_UtilityScripts.object_utilities import ObjectUtilities
@@ -130,3 +131,86 @@ def remove_suffix(known_suffixes):
             if name.endswith(suffix):
                 cmds.rename(obj, name[:-len(suffix)], ignoreShape=True)
                 break
+
+
+### MATERIAL OPERATIONS
+
+MATERIAL_PREFIXES = ["M_", "MAT_"]
+
+
+def get_material_data():
+    """
+    Builds up the data needed for the Materials tab.
+    Goes through each material found on the selection and figures out
+    what type it is, whether it already has a prefix, and if the name looks auto-generated.
+
+    :return: rows, also_affected, lambert1_objects
+    """
+    mat_rows, also_affected, lambert1_objects = uti.get_materials_from_selection()
+    rows = []
+
+    for mat, assigned_to in mat_rows:
+        opr = ObjectUtilities(mat)
+        obj_type = opr.o_type_identifier()
+
+        ### skip anything that isnt a standard material type
+        if obj_type not in ["lambert", "blinn", "phong"]:
+            continue
+
+        name = opr.o_name_extractor()
+
+        ### check if the name already starts with a known prefix
+        current_prefix = ""
+        for p in MATERIAL_PREFIXES:
+            if name.startswith(p):
+                current_prefix = p
+                break
+
+        if current_prefix:
+            prefix_status = "has_prefix"
+        else:
+            prefix_status = "no_prefix"
+
+        ### strip the prefix to get the base name, then check if it looks auto-generated
+        if current_prefix:
+            base = name[len(current_prefix):]
+        else:
+            base = name
+
+        is_auto_named = bool(re.match(r'^[a-zA-Z]+\d+$', base))
+
+        rows.append({
+            "Material": mat,
+            "AssignedTo": assigned_to,
+            "Type": obj_type,
+            "Name": name,
+            "IsAutoNamed": is_auto_named,
+            "PrefixStatus": prefix_status,
+        })
+
+    return rows, also_affected, lambert1_objects
+
+
+def rename_materials(mat_list, prefix):
+    """
+    Applies the given prefix to each material in the list.
+    Strips M_ or MAT_ first if one is already there, so it doesnt stack up.
+    The name used is whatever is in the dict (could be edited by the user in the UI).
+
+    :param mat_list: list of material dicts
+    :param prefix: the prefix to apply, e.g. "M_" or "MAT_"
+    """
+    for mat_data in mat_list:
+        name = mat_data["Name"]
+
+        ### strip any existing prefix before applying the new one
+        base = name
+        for p in MATERIAL_PREFIXES:
+            if name.startswith(p):
+                base = name[len(p):]
+                break
+
+        new_name = f"{prefix}{base}"
+
+        if new_name != name:
+            cmds.rename(mat_data["Material"], new_name)

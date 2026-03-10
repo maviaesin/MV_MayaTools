@@ -4,9 +4,24 @@ from MV_UtilityScripts import maya_utilities, object_utilities, constants_librar
 from MV_UtilityScripts.constants_library import SUFFIXES
 from importlib import reload
 from . import renamer
-from .renamer import rename_objects
+from .renamer import rename_objects, rename_materials, get_material_data
 
 reload(renamer)
+
+
+### pool of background colors used to distinguish objects with multiple materials
+OBJECT_HIGHLIGHT_COLORS = [
+    (180, 210, 240),  # blue
+    (255, 200, 150),  # orange
+    (200, 240, 200),  # green
+    (240, 200, 240),  # purple
+    (255, 245, 150),  # yellow
+    (240, 190, 190),  # pink
+    (180, 240, 240),  # cyan
+    (220, 200, 170),  # tan
+    (210, 195, 240),  # violet
+    (195, 240, 215),  # mint
+]
 
 
 class RenamerUI(QtWidgets.QDialog):
@@ -35,6 +50,8 @@ class RenamerUI(QtWidgets.QDialog):
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self._build_prefix_tab(), "Prefix")
         self.tabs.addTab(self._build_suffix_tab(), "Suffix")
+        self.tabs.addTab(self._build_materials_tab(), "Materials")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         main_layout.addWidget(self.tabs)
         self.setLayout(main_layout)
@@ -67,7 +84,7 @@ class RenamerUI(QtWidgets.QDialog):
         self.legendLabel = QtWidgets.QLabel(
             '<span style="color: lightgray;">⬤ No Prefix</span> &nbsp; '
             '<span style="color: lightGreen;">⬤ Correct Prefix</span> &nbsp; '
-            '<span style="color: lightRed;">⬤ Incorrect Prefix</span>'
+            '<span style="color: #FFA500;">⬤ Incorrect Prefix</span>'
         )
         self.legendLabel.setAlignment(QtCore.Qt.AlignLeft)
         layout.addWidget(self.legendLabel)
@@ -222,7 +239,7 @@ class RenamerUI(QtWidgets.QDialog):
             if obj["PrefixStatus"] == "no_prefix":
                 color = QtGui.QColor("lightgrey")
             elif obj["PrefixStatus"] == "incorrect_prefix":
-                color = QtGui.QColor("Red")
+                color = QtGui.QColor("#FFA500")
             else:
                 color = QtGui.QColor("lightGreen")
 
@@ -308,6 +325,294 @@ class RenamerUI(QtWidgets.QDialog):
             known.append(custom)
 
         renamer.remove_suffix(known)
+        self.close()
+
+
+    # ─────────────────────────────────────────
+    # MATERIALS TAB
+    # ─────────────────────────────────────────
+
+    def _build_materials_tab(self):
+        """Sets up the Materials tab layout and widgets."""
+
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout()
+        layout.setAlignment(QtCore.Qt.AlignTop)
+
+        ### PREFIX SELECTOR ROW
+        prefix_layout = QtWidgets.QHBoxLayout()
+        prefix_label = QtWidgets.QLabel("Prefix:")
+        prefix_layout.addWidget(prefix_label)
+
+        self.prefixRadioM = QtWidgets.QRadioButton("M_")
+        self.prefixRadioM.setChecked(True)
+        self.prefixRadioMAT = QtWidgets.QRadioButton("MAT_")
+        self.prefixRadioCustom = QtWidgets.QRadioButton("Custom:")
+        self.prefixCustomInput = QtWidgets.QLineEdit()
+        self.prefixCustomInput.setPlaceholderText("e.g. MTL_")
+        self.prefixCustomInput.setMaximumWidth(100)
+        self.prefixCustomInput.setEnabled(False)
+
+        self.prefixRadioCustom.toggled.connect(
+            lambda checked: self.prefixCustomInput.setEnabled(checked)
+        )
+
+        prefix_layout.addWidget(self.prefixRadioM)
+        prefix_layout.addWidget(self.prefixRadioMAT)
+        prefix_layout.addWidget(self.prefixRadioCustom)
+        prefix_layout.addWidget(self.prefixCustomInput)
+        prefix_layout.addStretch()
+        layout.addLayout(prefix_layout)
+
+        ### HIDE ALREADY-PREFIXED CHECKBOX
+        self.hideCorrectMatPrefixCheckbox = QtWidgets.QCheckBox("Hide already-prefixed materials")
+        self.hideCorrectMatPrefixCheckbox.stateChanged.connect(self.refresh_materials)
+        layout.addWidget(self.hideCorrectMatPrefixCheckbox)
+
+        ### MATERIALS TABLE
+        self.materialsTable = QtWidgets.QTableWidget()
+        self.materialsTable.setColumnCount(4)
+        self.materialsTable.setHorizontalHeaderLabels(["", "Object", "Type", "Material Name"])
+
+        self.materialsTable.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Fixed)
+        self.materialsTable.setColumnWidth(0, 20)
+        for col in range(1, 4):
+            self.materialsTable.horizontalHeader().setSectionResizeMode(col, QtWidgets.QHeaderView.Stretch)
+
+        self.materialsTable.cellChanged.connect(self.on_mat_name_edited)
+        layout.addWidget(self.materialsTable)
+
+        ### ALSO AFFECTED BOX
+        also_label = QtWidgets.QLabel("Also affected (shared materials, will also be updated):")
+        layout.addWidget(also_label)
+        self.alsoAffectedBox = QtWidgets.QPlainTextEdit()
+        self.alsoAffectedBox.setReadOnly(True)
+        layout.addWidget(self.alsoAffectedBox)
+
+        ### EXCLUDED (LAMBERT1) BOX
+        excluded_label = QtWidgets.QLabel(
+            '<span style="color: #FFA500;">&#9888;  Maya\'s default material lambert1 shouldn\'t be edited. '
+            'Please assign a different material to make changes:</span>'
+        )
+        layout.addWidget(excluded_label)
+        self.excludedBox = QtWidgets.QPlainTextEdit()
+        self.excludedBox.setReadOnly(True)
+        self.excludedBox.setMaximumHeight(60)
+        layout.addWidget(self.excludedBox)
+
+        ### BOTTOM BUTTONS
+        mat_button_layout = QtWidgets.QHBoxLayout()
+
+        self.renameSelectedMatsButton = QtWidgets.QPushButton("Rename Selected")
+        self.renameSelectedMatsButton.clicked.connect(self.handle_rename_selected_materials)
+        mat_button_layout.addWidget(self.renameSelectedMatsButton)
+
+        self.renameAllMatsButton = QtWidgets.QPushButton("Rename All")
+        self.renameAllMatsButton.clicked.connect(self.handle_rename_all_materials)
+        mat_button_layout.addWidget(self.renameAllMatsButton)
+
+        mat_button_layout.addStretch()
+
+        self.cancelMatsButton = QtWidgets.QPushButton("Cancel")
+        self.cancelMatsButton.clicked.connect(self.close)
+        mat_button_layout.addWidget(self.cancelMatsButton)
+
+        layout.addLayout(mat_button_layout)
+
+        tab.setLayout(layout)
+        return tab
+
+    def _on_tab_changed(self, index):
+        """Reloads the materials table whenever the user switches to the Materials tab."""
+        if self.tabs.tabText(index) == "Materials":
+            self.refresh_materials()
+
+    def refresh_materials(self):
+        """Clears and rebuilds the materials table from whatever is currently selected in Maya."""
+
+        ### block cellChanged while we fill the table so it doesnt fire on our own inserts
+        self._populating_materials = True
+        self.materialsTable.setRowCount(0)
+        self.mat_row_checkboxes = []
+        self.mat_row_data = []
+        self.mat_original_names = {}
+
+        rows, also_affected, lambert1_objects = get_material_data()
+
+        ### filter out already-prefixed materials if the checkbox is on
+        if self.hideCorrectMatPrefixCheckbox.isChecked():
+            filtered_rows = []
+            for r in rows:
+                if r["PrefixStatus"] != "has_prefix":
+                    filtered_rows.append(r)
+            rows = filtered_rows
+
+        ### count how many materials each object has
+        object_count = {}
+        for row in rows:
+            obj = row["AssignedTo"]
+            object_count[obj] = object_count.get(obj, 0) + 1
+
+        ### build a color map for objects with more than one material
+        object_color_map = {}
+        color_index = 0
+        for obj, count in object_count.items():
+            if count > 1:
+                r, g, b = OBJECT_HIGHLIGHT_COLORS[color_index % len(OBJECT_HIGHLIGHT_COLORS)]
+                object_color_map[obj] = (r, g, b)
+                color_index += 1
+
+        ### POPULATE TABLE
+        for row_data in rows:
+            row_index = self.materialsTable.rowCount()
+            self.materialsTable.insertRow(row_index)
+
+            self.mat_original_names[row_index] = row_data["Name"]
+
+            ### CHECKBOX
+            checkbox_widget = QtWidgets.QWidget()
+            cb_layout = QtWidgets.QHBoxLayout()
+            checkbox = QtWidgets.QCheckBox()
+            checkbox.setStyleSheet("QCheckBox { background-color: White; color: black }")
+            cb_layout.addWidget(checkbox)
+            cb_layout.setAlignment(QtCore.Qt.AlignCenter)
+            cb_layout.setContentsMargins(0, 0, 0, 0)
+            checkbox_widget.setLayout(cb_layout)
+            self.materialsTable.setCellWidget(row_index, 0, checkbox_widget)
+            self.mat_row_checkboxes.append(checkbox)
+            self.mat_row_data.append(row_data)
+
+            ### OBJECT CELL
+            object_item = QtWidgets.QTableWidgetItem(row_data["AssignedTo"])
+            object_item.setFlags(object_item.flags() & ~QtCore.Qt.ItemIsEditable)
+
+            ### if this object has multiple materials, give it a pool color with black text
+            if row_data["AssignedTo"] in object_color_map:
+                r, g, b = object_color_map[row_data["AssignedTo"]]
+                object_item.setBackground(QtGui.QColor(r, g, b))
+                object_item.setForeground(QtGui.QColor("black"))
+
+            ### TYPE CELL
+            type_item = QtWidgets.QTableWidgetItem(row_data["Type"])
+            type_item.setFlags(type_item.flags() & ~QtCore.Qt.ItemIsEditable)
+
+            ### MATERIAL NAME CELL (editable)
+            name_item = QtWidgets.QTableWidgetItem(row_data["Name"])
+            name_item.setFlags(name_item.flags() | QtCore.Qt.ItemIsEditable)
+
+            ### COLOR CODING
+            if row_data["PrefixStatus"] == "has_prefix":
+                color = QtGui.QColor("lightGreen")
+            elif row_data["IsAutoNamed"]:
+                color = QtGui.QColor("orange")
+            else:
+                color = QtGui.QColor("lightgrey")
+
+            type_item.setForeground(color)
+            name_item.setForeground(color)
+
+            self.materialsTable.setItem(row_index, 1, object_item)
+            self.materialsTable.setItem(row_index, 2, type_item)
+            self.materialsTable.setItem(row_index, 3, name_item)
+
+        self._populating_materials = False
+
+        ### ALSO AFFECTED BOX
+        if also_affected:
+            lines = []
+            for obj, mat in also_affected:
+                lines.append(f"* {obj}  (uses {mat})")
+            self.alsoAffectedBox.setPlainText("\n".join(lines))
+        else:
+            self.alsoAffectedBox.setPlainText("")
+
+        ### EXCLUDED BOX
+        if lambert1_objects:
+            self.excludedBox.setPlainText(", ".join(lambert1_objects))
+        else:
+            self.excludedBox.setPlainText("")
+
+    def on_mat_name_edited(self, row, col):
+        """Highlights the material name cell if the user changed it from the original."""
+        if getattr(self, '_populating_materials', False):
+            return
+        if col != 3:
+            return
+
+        item = self.materialsTable.item(row, col)
+        if not item:
+            return
+
+        original = self.mat_original_names.get(row, "")
+
+        ### if the name changed, give it a yellow background with black text so its readable
+        if item.text() != original:
+            item.setBackground(QtGui.QColor(255, 245, 150))
+            item.setForeground(QtGui.QColor("black"))
+        else:
+            ### user typed back the original, reset background and restore the status color
+            item.setData(QtCore.Qt.BackgroundRole, None)
+            if row < len(self.mat_row_data):
+                row_data = self.mat_row_data[row]
+                if row_data["PrefixStatus"] == "has_prefix":
+                    item.setForeground(QtGui.QColor("lightGreen"))
+                elif row_data["IsAutoNamed"]:
+                    item.setForeground(QtGui.QColor("orange"))
+                else:
+                    item.setForeground(QtGui.QColor("lightgrey"))
+
+    def _get_selected_prefix(self):
+        """Reads which prefix the user picked and returns it as a string."""
+        if self.prefixRadioM.isChecked():
+            return "M_"
+        elif self.prefixRadioMAT.isChecked():
+            return "MAT_"
+        else:
+            custom = self.prefixCustomInput.text().strip()
+            if not custom:
+                cmds.warning("Please enter a custom prefix.")
+                return None
+            if not custom.endswith("_"):
+                custom = f"{custom}_"
+            return custom
+
+    def _collect_mat_rows_from_table(self, selected_only=False):
+        """Reads the table and returns a list of material dicts ready for renaming.
+        Picks up any name edits the user made directly in the table."""
+        result = []
+        for row_index in range(len(self.mat_row_checkboxes)):
+            checkbox = self.mat_row_checkboxes[row_index]
+            row_data = self.mat_row_data[row_index]
+
+            if selected_only and not checkbox.isChecked():
+                continue
+
+            ### grab the name from the table cell in case the user edited it
+            edited_name = self.materialsTable.item(row_index, 3).text()
+
+            entry = dict(row_data)
+            entry["Name"] = edited_name
+            result.append(entry)
+
+        return result
+
+    def handle_rename_selected_materials(self):
+        """Renames only the materials that are checked in the table."""
+        prefix = self._get_selected_prefix()
+        if prefix is None:
+            return
+        mat_list = self._collect_mat_rows_from_table(selected_only=True)
+        if mat_list:
+            rename_materials(mat_list, prefix)
+        self.close()
+
+    def handle_rename_all_materials(self):
+        """Renames every material shown in the table."""
+        prefix = self._get_selected_prefix()
+        if prefix is None:
+            return
+        mat_list = self._collect_mat_rows_from_table(selected_only=False)
+        rename_materials(mat_list, prefix)
         self.close()
 
 
