@@ -87,8 +87,7 @@ def rename_objects(obj_list):
             new_name = f"{detected_prefix}{stripped_name}"
 
         ### RENAME OBJECT IN MAYA
-        transform_node = obj_path.split('|')[-1]
-        cmds.rename(transform_node, new_name, ignoreShape=True)
+        cmds.rename(obj_path, new_name, ignoreShape=True)
 
 
 ### SUFFIX OPERATIONS
