@@ -1,0 +1,12 @@
+{
+    "template_name": "SimpleAvatarCustomization",
+    "node_name": "SimpleAvatarCustomization",
+    "target_names": [
+        "ChestSize",
+        "WaistSize",
+        "HipSize",
+        "ShoulderWidth",
+        "ArmThickness",
+        "LegThickness"
+    ]
+}

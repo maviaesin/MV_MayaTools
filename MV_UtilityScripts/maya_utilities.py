@@ -112,3 +112,46 @@ def check_object_is_skeletal_mesh(obj) -> bool:
                 has_skin_cluster = True
 
     return has_skin_cluster
+
+
+def check_is_valid_maya_name(name):
+    """Returns True if Maya accepts the name: English letters, numbers and _, not starting with a number."""
+    if not name:
+        return False
+    if name[0].isdigit():
+        return False
+
+    for character in name:
+        if not character.isascii():
+            return False
+        if not (character.isalnum() or character == "_"):
+            return False
+
+    return True
+
+
+def find_blend_shape_nodes(mesh):
+    """Returns the blendshape nodes in the mesh's history."""
+    history = cmds.listHistory(mesh) or []
+    return cmds.ls(history, type="blendShape")
+
+
+def get_user_mesh_selection():
+    """Returns the full path of the one selected mesh.
+
+    Raises:
+        RuntimeError: If nothing, no mesh, or more than one mesh is selected.
+    """
+    selected_object_list = get_user_object_selection()
+
+    meshes = []
+    for obj in selected_object_list:
+        if check_object_is_mesh(obj):
+            meshes.append(obj)
+
+    if not meshes:
+        raise RuntimeError("Select one mesh.")
+    if len(meshes) > 1:
+        raise RuntimeError("Select only one mesh.")
+
+    return cmds.ls(meshes[0], long=True)[0]
