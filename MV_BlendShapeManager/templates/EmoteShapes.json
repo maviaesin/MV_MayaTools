@@ -1,0 +1,11 @@
+{
+    "template_name": "EmoteShapes",
+    "node_name": "EmoteShapes",
+    "target_names": [
+        "Happy",
+        "Sad",
+        "Angry",
+        "Surprised",
+        "Excited"
+    ]
+}
